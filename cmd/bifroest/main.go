@@ -10,6 +10,8 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sort"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -48,6 +50,7 @@ func run() error {
 	// 4. Initialize logging.
 	log = slog.New(logging.New(os.Stdout, parseLevel(cfg.Log.Level)))
 	slog.SetDefault(log)
+	logStartupSummary(log, cfg)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -128,6 +131,44 @@ func run() error {
 	wg.Wait()
 
 	return serveErr
+}
+
+// logStartupSummary prints the effective (non-secret) configuration once,
+// right after it's loaded, so the first thing a look at the logs shows is
+// "here's what's actually in effect" rather than scattered per-target
+// startup noise. Tokens/API keys are never included.
+func logStartupSummary(log *slog.Logger, cfg *config.Config) {
+	attrs := []any{
+		"port", cfg.Server.Port,
+		"mount_anchor", cfg.Mount.Anchor,
+		"database_path", cfg.Database.Path,
+		"log_level", cfg.Log.Level,
+		"plex_enabled", cfg.Targets.Plex.Enabled,
+		"jellyfin_enabled", cfg.Targets.Jellyfin.Enabled,
+	}
+	if cfg.Targets.Plex.Enabled {
+		attrs = append(attrs, "plex_url", cfg.Targets.Plex.URL)
+	}
+	if cfg.Targets.Jellyfin.Enabled {
+		attrs = append(attrs, "jellyfin_url", cfg.Targets.Jellyfin.URL)
+	}
+	attrs = append(attrs,
+		"sonarr_instances", instanceList(cfg.Sources.Sonarr),
+		"radarr_instances", instanceList(cfg.Sources.Radarr),
+	)
+	log.Info("starting bifroest", attrs...)
+}
+
+func instanceList(instances map[string]config.SourceInstance) string {
+	if len(instances) == 0 {
+		return "none"
+	}
+	names := make([]string, 0, len(instances))
+	for name := range instances {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ",")
 }
 
 func parseLevel(level string) slog.Level {
