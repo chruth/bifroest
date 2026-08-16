@@ -392,6 +392,18 @@ path map — instances never share credentials or mappings.
   underlying problem is fixed the next scheduled attempt succeeds on its
   own — no need to restart bifroest or touch the database. Check
   `last_error` on the job (or the logs) to see what's actually failing.
+- **`log.dir: permission denied` on startup, even though the directory
+  you created has the right owner:** the error names the *parent*
+  directory it failed to create, not the one you chowned — e.g.
+  `mkdir /opt/bifroest: permission denied` when you only prepared
+  `/opt/bifroest/logs`. This happens because Docker creates missing
+  bind-mount parent directories inside the container as root, so a path
+  outside the pre-owned `/data` volume needs its *entire* directory
+  chain to already exist with the right ownership, not just the leaf
+  directory you bind-mounted. Easiest fix: point `log.dir` at a
+  subdirectory of `/data` instead (e.g. `/data/logs`, already writable
+  by the container's non-root user — see `docker-compose.yml`), rather
+  than an unrelated path.
 
 ## Running locally
 

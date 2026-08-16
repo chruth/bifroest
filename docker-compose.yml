@@ -15,6 +15,13 @@ services:
       - BIFROEST_JELLYFIN_TOKEN=${JELLYFIN_TOKEN}
       - BIFROEST_SONARR_MAIN_TOKEN=${SONARR_MAIN_TOKEN}
       - BIFROEST_RADARR_MAIN_TOKEN=${RADARR_MAIN_TOKEN}
+      # Optional: rotated file logging alongside stdout. Keep it under
+      # /data (already writable by the container's non-root user via the
+      # ./data volume below) rather than an unrelated path like
+      # /opt/something/logs - Docker creates missing bind-mount parent
+      # directories as root, so a path outside /data would need its own
+      # extra ownership setup to be writable by the container's user.
+      # - BIFROEST_LOG_DIR=/data/logs
     volumes:
       # Optional: only needed for path_maps (a prefix rewrite between the
       # Sonarr/Radarr and Plex/Jellyfin filesystem views). If every
