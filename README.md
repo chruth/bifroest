@@ -200,12 +200,13 @@ In Sonarr: **Settings -> Connect -> + -> Webhook**
 - **URL:** `http://bifroest:8080/webhook/sonarr/main` (replace `main` with
   the instance name you gave it in `config.yaml`)
 - **Method:** `POST`
-- **Headers** (Advanced): add a header named `Authorization` with value
-  `Bearer <the token you set for this instance in config.yaml>`
+- **Headers** (Advanced): add a header named `Auth` with value
+  `<the token you set for this instance in config.yaml>` — just the token
+  itself, nothing else.
 
-Sonarr's built-in webhook notification doesn't have a dedicated "Bearer
-token" field, but it does let you attach arbitrary headers, which is all
-that's needed here.
+Sonarr's built-in webhook notification doesn't have a dedicated
+authentication field, but it does let you attach arbitrary headers, which
+is all that's needed here.
 
 Repeat for each Sonarr instance, pointing at its own
 `/webhook/sonarr/<instance>` path with its own token.
@@ -221,7 +222,7 @@ Same as Sonarr, under **Settings -> Connect -> + -> Webhook** in Radarr:
   Optionally enable *On Movie Delete* too, if you ever delete whole movies
   (files included) through Radarr.
 - **URL:** `http://bifroest:8080/webhook/radarr/main`
-- **Headers:** `Authorization: Bearer <radarr instance token>`
+- **Headers:** `Auth: <radarr instance token>`
 
 ## 7. Plex configuration
 
@@ -368,8 +369,8 @@ path map — instances never share credentials or mappings.
 - **No scans happening at all:** check `GET /ready` — if it reports
   `mount_unavailable`, the anchor file isn't visible to the container.
   Check the volume mount and `mount.anchor` path.
-- **`401` from the webhook endpoint:** the `Authorization: Bearer ...`
-  header is missing or doesn't match the instance's configured token.
+- **`401` from the webhook endpoint:** the `Auth` header is missing or
+  doesn't match the instance's configured token.
 - **`404` from the webhook endpoint:** the source (`sonarr`/`radarr`) or
   instance name in the URL doesn't match anything in `config.yaml`.
 - **Job stuck in `failed` with a path-mapping error:** the incoming path
@@ -407,10 +408,11 @@ older [Cloudbox/autoscan](https://github.com/Cloudbox/autoscan) — to make
 sure the field names and scanning behavior match real-world usage, not just
 the API docs.
 
-- **Sonarr/Radarr webhooks** don't have a native "Bearer token" auth field;
-  authentication here relies on Sonarr/Radarr's generic custom-headers
-  support (available in both apps' webhook notification settings) to send
-  `Authorization: Bearer <token>`.
+- **Sonarr/Radarr webhooks** don't have a native authentication field;
+  this relies on Sonarr/Radarr's generic custom-headers support (available
+  in both apps' webhook notification settings) to send a single `Auth`
+  header holding the token as-is — no `Bearer` prefix or `Authorization`
+  scheme, just one header name and one value to fill in.
 - **Sonarr Rename** events scan both the file's new location and its
   previous location (`renamedEpisodeFiles[].path` and `.previousPath`), so
   a rename that moves an episode into a different season folder clears out

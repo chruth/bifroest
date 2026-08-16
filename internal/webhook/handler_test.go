@@ -58,7 +58,7 @@ func newTestHandlerWithLog(t *testing.T) (http.Handler, *queue.Queue, *bytes.Buf
 func doWebhook(h http.Handler, method, path, token, body string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, bytes.NewBufferString(body))
 	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set(authHeader, token)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()

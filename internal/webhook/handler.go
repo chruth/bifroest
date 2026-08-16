@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/chruth/bifroest/internal/config"
@@ -20,6 +19,13 @@ import (
 // maxBodyBytes bounds webhook request bodies. Sonarr/Radarr payloads are
 // normally a few KB; this is generous headroom without being unbounded.
 const maxBodyBytes = 5 << 20 // 5 MiB
+
+// authHeader is the custom header Sonarr/Radarr must be configured to send,
+// holding the instance's token verbatim - no "Bearer " prefix, no
+// "Authorization" scheme machinery, just the token by itself, so it's a
+// two-field entry (key, value) to add in Sonarr/Radarr's webhook settings
+// instead of three (key, "Bearer ", token).
+const authHeader = "Auth"
 
 // instanceAuth holds the per-instance token and path mapping needed to
 // authenticate and rewrite paths for one configured Sonarr/Radarr instance.
@@ -88,9 +94,8 @@ func (h *handler) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, ok := bearerToken(r)
-	if !ok {
-		w.Header().Set("WWW-Authenticate", "Bearer")
+	token := r.Header.Get(authHeader)
+	if token == "" {
 		http.Error(w, "missing authentication", http.StatusUnauthorized)
 		return
 	}
@@ -152,13 +157,4 @@ func (h *handler) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusAccepted)
-}
-
-func bearerToken(r *http.Request) (string, bool) {
-	const prefix = "Bearer "
-	h := r.Header.Get("Authorization")
-	if !strings.HasPrefix(h, prefix) {
-		return "", false
-	}
-	return strings.TrimPrefix(h, prefix), true
 }
