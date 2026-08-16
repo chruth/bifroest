@@ -2,11 +2,11 @@ package webhook
 
 import (
 	"bytes"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/chruth/bifroest/internal/config"
@@ -33,6 +33,14 @@ func testConfig() *config.Config {
 
 func newTestHandler(t *testing.T) (http.Handler, *queue.Queue) {
 	t.Helper()
+	h, q, _ := newTestHandlerWithLog(t)
+	return h, q
+}
+
+// newTestHandlerWithLog is like newTestHandler but also returns the log
+// buffer, for tests that need to inspect what got logged.
+func newTestHandlerWithLog(t *testing.T) (http.Handler, *queue.Queue, *bytes.Buffer) {
+	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	db, err := queue.Open(dbPath)
 	if err != nil {
@@ -41,9 +49,10 @@ func newTestHandler(t *testing.T) (http.Handler, *queue.Queue) {
 	t.Cleanup(func() { db.Close() })
 
 	q := queue.New(db)
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	var logBuf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&logBuf, nil))
 	h := New(testConfig(), q, []string{"plex", "jellyfin"}, log)
-	return h, q
+	return h, q, &logBuf
 }
 
 func doWebhook(h http.Handler, method, path, token, body string) *httptest.ResponseRecorder {
@@ -129,6 +138,32 @@ func TestWebhookAcceptedAndEnqueues(t *testing.T) {
 	}
 	if job.ScanPath != "/media/tv/Breaking Bad/Season 05" {
 		t.Errorf("unexpected scan path: %s", job.ScanPath)
+	}
+}
+
+func TestWebhookLogsIsUpgradeOnlyForDownloadEvents(t *testing.T) {
+	h, _, logBuf := newTestHandlerWithLog(t)
+
+	// Download: is_upgrade is meaningful (Sonarr/Radarr actually populate
+	// it) and must appear in the log.
+	rec := doWebhook(h, "POST", "/webhook/sonarr/main", "main-token", sonarrDownloadPayload)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("got status %d, want 202: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(logBuf.String(), "is_upgrade") {
+		t.Error("expected is_upgrade to appear in the log for a Download event")
+	}
+
+	// Rename: is_upgrade isn't populated by Sonarr for this event type, so
+	// logging it as "false" would misleadingly imply bifroest determined
+	// this wasn't an upgrade, when the concept doesn't apply at all.
+	logBuf.Reset()
+	rec = doWebhook(h, "POST", "/webhook/sonarr/main", "main-token", sonarrRenamePayload)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("got status %d, want 202: %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(logBuf.String(), "is_upgrade") {
+		t.Errorf("expected no is_upgrade in the log for a Rename event, got: %s", logBuf.String())
 	}
 }
 

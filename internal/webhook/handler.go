@@ -115,9 +115,19 @@ func (h *handler) handleWebhook(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	for _, ev := range events {
-		h.log.Info("received webhook",
+		logAttrs := []any{
 			"source", ev.Source, "instance", ev.Instance, "event", ev.EventType,
-			"media_type", ev.MediaType, "path", ev.Path, "is_upgrade", ev.IsUpgrade)
+			"media_type", ev.MediaType, "path", ev.Path,
+		}
+		// is_upgrade only means anything for a Download event (the only
+		// one Sonarr/Radarr actually populate it for); showing it as
+		// "false" on e.g. a Rename or delete event would misleadingly
+		// suggest bifroest determined it wasn't an upgrade, when the
+		// concept just doesn't apply there.
+		if ev.EventType == "Download" {
+			logAttrs = append(logAttrs, "is_upgrade", ev.IsUpgrade)
+		}
+		h.log.Info("received webhook", logAttrs...)
 
 		scanPath, mapErr := rewrite.Apply(inst.mappings, ev.Path)
 		if mapErr != nil {
