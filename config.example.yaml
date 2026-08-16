@@ -1,0 +1,148 @@
+# Example configuration for bifroest.
+#
+# Every scalar value in this file (not just secrets) can also be set via an
+# environment variable instead: BIFROEST_ + the field's path, upper-cased
+# and underscore-joined. A set env var always overrides the file. Examples:
+#
+#   server.port                     -> BIFROEST_SERVER_PORT
+#   targets.plex.url                -> BIFROEST_PLEX_URL
+#   targets.plex.token              -> BIFROEST_PLEX_TOKEN
+#   targets.jellyfin.url            -> BIFROEST_JELLYFIN_URL
+#   targets.jellyfin.token          -> BIFROEST_JELLYFIN_TOKEN
+#   sources.sonarr.main.token       -> BIFROEST_SOURCES_SONARR_MAIN_TOKEN
+#   sources.radarr.main.token       -> BIFROEST_SOURCES_RADARR_MAIN_TOKEN
+#
+# URLs, tokens are deliberately left out of this file entirely rather than
+# written as e.g. `token: ""` - an empty string in the file and a field
+# left out altogether behave identically (both fall through to the
+# environment variable), so there's no reason to write the empty form and
+# risk it looking like a value you're expected to fill in here. Set them
+# via environment variables instead (see docker-compose.yml) - or add the
+# key back with a literal value if you're not using Docker Compose and
+# would rather keep everything in one file.
+#
+# Most other settings below are shown commented out at the value bifroest
+# already uses by default - the file behaves identically whether the line
+# is there or not. They're listed for discoverability; uncomment (or set
+# the matching env var) only to change one.
+#
+# path_maps is the one exception that has no env var form at all (no
+# sensible single-env-var form for a list of from/to pairs) - it stays
+# YAML-only, and is itself optional: see the sources section below. If
+# every one of your instances can skip path_maps, you don't need this file
+# at all - see README.md "Running without a config file".
+#
+# See README.md for the full walkthrough.
+
+server:
+  # Port for bifroest's own HTTP server (webhooks + /health + /ready).
+  # Always bound to all interfaces inside the container - there's no
+  # separate "address" setting, because interface restriction belongs at
+  # the Docker port-publishing layer instead (e.g. "127.0.0.1:8080:8080"
+  # in docker-compose.yml if you want it host-local only). This port must
+  # match what you expose in docker-compose.yml and use in the Sonarr/
+  # Radarr webhook URLs below.
+  # port: 8080
+
+mount:
+  # The single global rclone mount-health indicator, as seen from inside
+  # the bifroest container. No Plex/Jellyfin scan is EVER sent unless this
+  # file exists - this is what lets bifroest tell "the file was legitimately
+  # deleted" apart from "the rclone mount just isn't there right now".
+  # It doesn't need to be near your media; any small file that lives at a
+  # fixed path and isn't expected to disappear on its own works, e.g. one
+  # you create once with `touch /media/anchor.bin` right after mounting.
+  anchor: "/media/anchor.bin"
+  # How often to check the anchor file still exists.
+  # check_interval: 5s
+
+queue:
+  # Number of goroutines processing scan jobs concurrently. Each worker
+  # handles one job at a time; raise this if you have many instances/high
+  # event volume and want more scans in flight simultaneously.
+  # workers: 2
+  # After a webhook event is received, how long a job waits before it
+  # becomes eligible to run. Gives the rclone remote mount a moment to
+  # actually reflect the filesystem change before Plex/Jellyfin looks for
+  # it - scanning too early just wastes the scan.
+  # delay: 5s
+  # How often each worker checks SQLite for jobs that are now due. The
+  # queue is poll-based, not push-based, so this is your responsiveness
+  # knob: worst case, a job becomes eligible right after a poll and waits
+  # almost a full poll_interval before being picked up. Real end-to-end
+  # latency after an event is therefore roughly delay + poll_interval, not
+  # just delay.
+  # poll_interval: 5s
+  #
+  # There's no max_retries setting: target (Plex/Jellyfin) failures retry
+  # indefinitely with exponential backoff (5s, 15s, 30s, 1m, then every 5m
+  # thereafter), same as mount outages. A long Plex/Jellyfin outage is
+  # never a reason to lose a scan - the job just sits in SQLite and waits,
+  # exactly like it does when the mount is down. There's no UI or API to
+  # requeue a job, so giving up permanently isn't an option here.
+
+sources:
+  # One entry per Sonarr/Radarr instance you run. Each instance is fully
+  # independent: its own bearer token (used to authenticate requests to
+  # its own webhook URL below) and its own path_maps, so e.g. a "4k" or
+  # "anime" instance never shares credentials or path rewrites with "main".
+  #
+  # Every instance needs at least a token (set here or via env var - see
+  # the header comment) for its webhook to work. path_maps is optional: if
+  # Sonarr/Radarr and Plex/Jellyfin see this instance's files at the exact
+  # same path (e.g. everything is mounted at the same absolute path in
+  # every container), omit path_maps entirely and the path is used
+  # unchanged. Where path_maps IS given, it's an ordered list of prefix
+  # rewrites: the first `from` prefix that matches an incoming path wins,
+  # and everything after it is preserved verbatim when appended to `to`. A
+  # path that matches none of them is a permanent failure for that event
+  # (logged, recorded as a failed job) - bifroest deliberately does not
+  # fall back to guessing or scanning the whole library.
+  sonarr:
+    main:
+      path_maps:
+        - from: "/tv/"
+          to: "/media/tv/"
+
+    anime:
+      path_maps:
+        - from: "/anime/"
+          to: "/media/anime/"
+
+  radarr:
+    main:
+      path_maps:
+        - from: "/movies/"
+          to: "/media/movies/"
+
+targets:
+  plex:
+    # Set to false to skip Plex entirely (e.g. Jellyfin-only setups). At
+    # least one of plex/jellyfin must be enabled.
+    enabled: true
+    # url and token: see header comment for setting these via env var. If
+    # setting a token directly here instead, see:
+    # https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/
+    #
+    # Plex libraries (and their filesystem locations) are discovered
+    # automatically via the API, once at startup, and cached in memory -
+    # there's no periodic background refresh, since library layouts
+    # essentially never change. If a scan path doesn't match anything in
+    # the cache (e.g. you added a new library, or Plex was down at
+    # startup), the cache is refreshed once on the spot and the match is
+    # retried before giving up.
+
+  jellyfin:
+    enabled: true
+    # url and token: see header comment for setting these via env var. If
+    # setting a token directly here instead, create one under Jellyfin's
+    # Dashboard -> API Keys.
+
+database:
+  # Where the SQLite job queue lives. Must be a writable path (unlike the
+  # media mount, which bifroest only ever needs read-only access to).
+  # path: /data/app.db
+
+log:
+  # One of: debug, info, warn, error.
+  # level: info
