@@ -108,11 +108,16 @@ Key sections:
   `path_maps` (an ordered list of `from`/`to` prefix rewrites — see below).
 - `targets.plex` / `targets.jellyfin` — `enabled`, `url`, and credentials.
 - `log.level` — one of `debug`/`info`/`warn`/`error` (default `info`).
-  Logs are colored (dim timestamp; green/yellow/red/blue level; an
-  `error` value is always highlighted red, even on a `warn` line) —
-  set the `NO_COLOR` environment variable to any non-empty value to
-  turn that off, e.g. when piping logs somewhere that doesn't render
-  ANSI escape codes.
+  Console logs are colored: dim timestamp, bold message, color-coded
+  level, `error` values always highlighted red (even on a `warn` line),
+  booleans in green/dim, HTTP status codes colored by range. Set the
+  `NO_COLOR` environment variable to any non-empty value to turn that
+  off, e.g. when piping logs somewhere that doesn't render ANSI escape
+  codes.
+- `log.file` — if set, additionally writes logs to this path, plain
+  (no color codes) and automatically rotated (100MB per file, 3 old
+  ones kept compressed, 28 days max age). Unset (the default) means
+  stdout only, same as before.
 
 ### Environment variables
 
@@ -129,10 +134,11 @@ targets.plex.url                -> BIFROEST_PLEX_URL
 targets.plex.token              -> BIFROEST_PLEX_TOKEN
 targets.jellyfin.url            -> BIFROEST_JELLYFIN_URL
 targets.jellyfin.token          -> BIFROEST_JELLYFIN_TOKEN
-sources.sonarr.<instance>.token -> BIFROEST_SOURCES_SONARR_<INSTANCE>_TOKEN
-sources.radarr.<instance>.token -> BIFROEST_SOURCES_RADARR_<INSTANCE>_TOKEN
+sources.sonarr.<instance>.token -> BIFROEST_SONARR_<INSTANCE>_TOKEN
+sources.radarr.<instance>.token -> BIFROEST_RADARR_<INSTANCE>_TOKEN
 database.path                   -> BIFROEST_DATABASE_PATH
 log.level                       -> BIFROEST_LOG_LEVEL
+log.file                        -> BIFROEST_LOG_FILE
 ```
 
 The instance name is upper-cased (`main` -> `MAIN`, `anime` -> `ANIME`).
@@ -159,8 +165,8 @@ set.
 
 The one part of the config that env vars can't normally express is a
 Sonarr/Radarr *instance actually existing* — its map key comes from the
-file. So as a special case, any `BIFROEST_SOURCES_SONARR_<INSTANCE>_TOKEN`
-or `BIFROEST_SOURCES_RADARR_<INSTANCE>_TOKEN` variable whose `<INSTANCE>`
+file. So as a special case, any `BIFROEST_SONARR_<INSTANCE>_TOKEN`
+or `BIFROEST_RADARR_<INSTANCE>_TOKEN` variable whose `<INSTANCE>`
 isn't already defined in the config file creates that instance on the
 spot, lower-cased (`MAIN` -> `main`), with no `path_maps` — i.e. its
 source and target paths are treated as identical. This is exactly the
@@ -170,8 +176,8 @@ true for all your instances, a config file isn't needed at all:
 ```bash
 docker run \
   -e BIFROEST_MOUNT_ANCHOR=/media/anchor.bin \
-  -e BIFROEST_SOURCES_SONARR_MAIN_TOKEN=... \
-  -e BIFROEST_SOURCES_RADARR_MAIN_TOKEN=... \
+  -e BIFROEST_SONARR_MAIN_TOKEN=... \
+  -e BIFROEST_RADARR_MAIN_TOKEN=... \
   -e BIFROEST_PLEX_ENABLED=true \
   -e BIFROEST_PLEX_URL=http://plex:32400 \
   -e BIFROEST_PLEX_TOKEN=... \

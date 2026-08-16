@@ -15,6 +15,8 @@ import (
 	"sync"
 	"syscall"
 
+	"gopkg.in/natefinch/lumberjack.v2"
+
 	"github.com/chruth/bifroest/internal/config"
 	"github.com/chruth/bifroest/internal/logging"
 	"github.com/chruth/bifroest/internal/mount"
@@ -48,7 +50,9 @@ func run() error {
 	}
 
 	// 4. Initialize logging.
-	log = slog.New(logging.New(os.Stdout, parseLevel(cfg.Log.Level)))
+	var closeLog func() error
+	log, closeLog = newLogger(cfg)
+	defer closeLog()
 	slog.SetDefault(log)
 	logStartupSummary(log, cfg)
 
@@ -133,13 +137,46 @@ func run() error {
 	return serveErr
 }
 
+// newLogger builds the application logger: always to stdout (colored), and
+// additionally to cfg.Log.File (rotated, plain - no ANSI codes in a file
+// meant to be read later by grep/tail/whatever) if one is configured. The
+// returned close func releases the log file on shutdown; it's a no-op
+// when no file is configured.
+//
+// Rotation uses lumberjack with fixed, sensible defaults rather than
+// exposing yet more config knobs for a feature that just needs to not
+// grow the file forever: 100MB per file, 3 old files kept (compressed),
+// 28 days maximum age.
+func newLogger(cfg *config.Config) (*slog.Logger, func() error) {
+	level := parseLevel(cfg.Log.Level)
+	console := logging.New(os.Stdout, level)
+
+	if cfg.Log.File == "" {
+		return slog.New(console), func() error { return nil }
+	}
+
+	rotator := &lumberjack.Logger{
+		Filename:   cfg.Log.File,
+		MaxSize:    100, // megabytes
+		MaxBackups: 3,
+		MaxAge:     28, // days
+		Compress:   true,
+	}
+	file := logging.NewPlain(rotator, level)
+	return slog.New(logging.NewFanOut(console, file)), rotator.Close
+}
+
 // logStartupSummary prints the effective (non-secret) configuration once,
 // right after it's loaded, so the first thing a look at the logs shows is
 // "here's what's actually in effect" rather than scattered per-target
 // startup noise. Split into a few short lines rather than one long one -
 // easier to scan at a glance. Tokens/API keys are never included.
 func logStartupSummary(log *slog.Logger, cfg *config.Config) {
-	log.Info("starting bifroest", "port", cfg.Server.Port, "log_level", cfg.Log.Level)
+	logAttrs := []any{"port", cfg.Server.Port, "log_level", cfg.Log.Level}
+	if cfg.Log.File != "" {
+		logAttrs = append(logAttrs, "log_file", cfg.Log.File)
+	}
+	log.Info("starting bifroest", logAttrs...)
 	log.Info("mount", "anchor", cfg.Mount.Anchor)
 	log.Info("database", "path", cfg.Database.Path)
 

@@ -1,8 +1,10 @@
 // Package logging provides a compact, human-readable slog.Handler for
-// console output: a dim timestamp, a color-coded level, the message, and
-// key=value attributes. The stdlib TextHandler can't do this cleanly - it
-// quote-escapes control characters, which breaks ANSI color codes fed
-// through ReplaceAttr - so this implements slog.Handler directly instead.
+// console output: a dim timestamp, a color-coded level, a bold message,
+// and key=value attributes with a few semantic highlights (booleans,
+// HTTP-status-like numbers, and "error" values). The stdlib TextHandler
+// can't do this cleanly - it quote-escapes control characters, which
+// breaks ANSI color codes fed through ReplaceAttr - so this implements
+// slog.Handler directly instead.
 package logging
 
 import (
@@ -18,16 +20,18 @@ import (
 
 const (
 	colorReset  = "\x1b[0m"
+	colorBold   = "\x1b[1m"
 	colorDim    = "\x1b[2m"
 	colorRed    = "\x1b[31m"
 	colorGreen  = "\x1b[32m"
 	colorYellow = "\x1b[33m"
 	colorBlue   = "\x1b[34m"
+	colorCyan   = "\x1b[36m"
 )
 
-// Handler is a slog.Handler for terminal/Docker-log output. Colors are
-// always on unless the NO_COLOR environment variable is set
-// (https://no-color.org).
+// Handler is a slog.Handler for terminal/Docker-log output. Colors are on
+// by default unless the NO_COLOR environment variable is set
+// (https://no-color.org), or the Handler was built with NewPlain.
 type Handler struct {
 	mu    *sync.Mutex
 	w     io.Writer
@@ -48,6 +52,16 @@ func New(w io.Writer, level slog.Level) *Handler {
 	}
 }
 
+// NewPlain is like New but never emits ANSI color codes, regardless of
+// NO_COLOR - for output that isn't a terminal, e.g. a log file, where
+// escape codes would just be noise for whoever (or whatever tool) reads it
+// later.
+func NewPlain(w io.Writer, level slog.Level) *Handler {
+	h := New(w, level)
+	h.color = false
+	return h
+}
+
 func (h *Handler) Enabled(_ context.Context, level slog.Level) bool {
 	return level >= h.level
 }
@@ -62,7 +76,7 @@ func (h *Handler) Handle(_ context.Context, r slog.Record) error {
 	h.writeColored(&buf, text, color)
 	buf.WriteByte(' ')
 
-	buf.WriteString(r.Message)
+	h.writeColored(&buf, r.Message, colorBold)
 
 	for _, a := range h.attrs {
 		h.writeAttr(&buf, a.Key, a.Value)
@@ -85,7 +99,7 @@ func (h *Handler) Handle(_ context.Context, r slog.Record) error {
 }
 
 func (h *Handler) writeColored(buf *bytes.Buffer, s, color string) {
-	if h.color {
+	if h.color && color != "" {
 		buf.WriteString(color)
 		buf.WriteString(s)
 		buf.WriteString(colorReset)
@@ -100,15 +114,59 @@ func (h *Handler) writeAttr(buf *bytes.Buffer, key string, v slog.Value) {
 	buf.WriteByte('=')
 
 	val := quoteIfNeeded(v.String())
-	// "error" is usually the one thing worth catching at a glance
-	// regardless of level (e.g. a Warn logging a retryable failure), so
-	// it's always highlighted red rather than only when the whole line is
-	// already an Error-level line.
-	if key == "error" {
-		h.writeColored(buf, val, colorRed)
-		return
+	h.writeColored(buf, val, attrColor(key, v))
+}
+
+// attrColor picks a highlight for a few attribute shapes that are usually
+// the first thing worth noticing at a glance in a wall of log lines:
+//   - "error" values, regardless of the line's level (e.g. a retryable
+//     failure logged at Warn still deserves to stand out)
+//   - booleans (green true / dim false) - reads naturally for the startup
+//     summary's "enabled=true" style lines
+//   - "status", read as an HTTP status code when numeric (green 2xx,
+//     blue 3xx, yellow 4xx, red 5xx)
+//
+// Anything else is left in the default color; returns "" for that case,
+// which writeColored treats as "don't color this".
+func attrColor(key string, v slog.Value) string {
+	switch {
+	case key == "error":
+		return colorRed
+	case key == "status":
+		if c, ok := statusColor(v); ok {
+			return c
+		}
+	case v.Kind() == slog.KindBool:
+		if v.Bool() {
+			return colorGreen
+		}
+		return colorDim
 	}
-	buf.WriteString(val)
+	return ""
+}
+
+func statusColor(v slog.Value) (string, bool) {
+	var code int64
+	switch v.Kind() {
+	case slog.KindInt64:
+		code = v.Int64()
+	case slog.KindUint64:
+		code = int64(v.Uint64())
+	default:
+		return "", false
+	}
+	switch {
+	case code >= 500:
+		return colorRed, true
+	case code >= 400:
+		return colorYellow, true
+	case code >= 300:
+		return colorCyan, true
+	case code >= 200:
+		return colorGreen, true
+	default:
+		return "", false
+	}
 }
 
 func quoteIfNeeded(s string) string {

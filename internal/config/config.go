@@ -13,14 +13,16 @@ import (
 )
 
 type Config struct {
-	Server  ServerConfig  `yaml:"server"`
-	Mount   MountConfig   `yaml:"mount"`
-	Queue   QueueConfig   `yaml:"queue"`
-	Sources SourcesConfig `yaml:"sources"`
-	// env:"-" - "targets" is a grouping in the YAML schema, but the env
-	// var names skip straight to BIFROEST_PLEX_*/BIFROEST_JELLYFIN_*
-	// rather than BIFROEST_TARGETS_PLEX_*: it doesn't carry information
-	// worth an extra path segment.
+	Server ServerConfig `yaml:"server"`
+	Mount  MountConfig  `yaml:"mount"`
+	Queue  QueueConfig  `yaml:"queue"`
+	// env:"-" on Sources and Targets: both are groupings in the YAML
+	// schema, but the env var names skip straight to
+	// BIFROEST_SONARR_*/BIFROEST_PLEX_* rather than
+	// BIFROEST_SOURCES_SONARR_*/BIFROEST_TARGETS_PLEX_* - neither word
+	// carries information worth an extra path segment, and it just makes
+	// the names longer to type.
+	Sources  SourcesConfig  `yaml:"sources" env:"-"`
 	Targets  TargetsConfig  `yaml:"targets" env:"-"`
 	Database DatabaseConfig `yaml:"database"`
 	Log      LogConfig      `yaml:"log"`
@@ -87,6 +89,9 @@ type DatabaseConfig struct {
 
 type LogConfig struct {
 	Level string `yaml:"level"`
+	// File, if set, additionally writes logs to this path (rotated - see
+	// cmd/bifroest). Empty (the default) means stdout only.
+	File string `yaml:"file"`
 }
 
 func defaults() Config {
@@ -152,9 +157,9 @@ const tokenSuffix = "_TOKEN"
 
 // discoverSourceInstances lets a Sonarr/Radarr instance be defined purely
 // from an environment variable, with no config file at all: for any
-// BIFROEST_SOURCES_SONARR_<NAME>_TOKEN or BIFROEST_SOURCES_RADARR_<NAME>_TOKEN
-// variable whose <NAME> isn't already a key in the corresponding map (from
-// the config file, if any), an empty SourceInstance is inserted under that
+// BIFROEST_SONARR_<NAME>_TOKEN or BIFROEST_RADARR_<NAME>_TOKEN variable
+// whose <NAME> isn't already a key in the corresponding map (from the
+// config file, if any), an empty SourceInstance is inserted under that
 // (lower-cased) name before applyEnvOverrides runs, so the normal env
 // override logic then fills in its Token.
 //
@@ -168,7 +173,7 @@ func discoverSourceInstances(cfg *Config) {
 }
 
 func discoverInstances(m *map[string]SourceInstance, source string) {
-	prefix := envPrefix + "_SOURCES_" + source + "_"
+	prefix := envPrefix + "_" + source + "_"
 	for _, kv := range os.Environ() {
 		name, _, ok := strings.Cut(kv, "=")
 		if !ok || !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, tokenSuffix) {
@@ -196,7 +201,7 @@ var durationType = reflect.TypeOf(time.Duration(0))
 // field (string, bool, int, time.Duration) anywhere in the config tree can
 // be set this way: the env var name is built by walking the field's yaml
 // tag path, upper-casing each segment, and joining with underscores,
-// prefixed with BIFROEST_ (a field tagged env:"-", currently just
+// prefixed with BIFROEST_ (a field tagged env:"-", currently Sources and
 // Targets, is traversed but contributes no segment of its own). A
 // Sonarr/Radarr instance name (a map key) is inserted into the path
 // unchanged, upper-cased. For example:
@@ -205,7 +210,7 @@ var durationType = reflect.TypeOf(time.Duration(0))
 //	mount.check_interval           -> BIFROEST_MOUNT_CHECK_INTERVAL
 //	targets.plex.token             -> BIFROEST_PLEX_TOKEN
 //	targets.jellyfin.token         -> BIFROEST_JELLYFIN_TOKEN
-//	sources.sonarr.main.token      -> BIFROEST_SOURCES_SONARR_MAIN_TOKEN
+//	sources.sonarr.main.token      -> BIFROEST_SONARR_MAIN_TOKEN
 //
 // A set (non-empty) env var always overrides the config file's value for
 // that field; an unset or empty one leaves the file's value untouched.
@@ -335,7 +340,7 @@ func (c *Config) validate() error {
 	} {
 		for name, inst := range instances {
 			if inst.Token == "" {
-				envVar := envVarName([]string{envPrefix, "sources", source, name, "token"})
+				envVar := envVarName([]string{envPrefix, source, name, "token"})
 				return fmt.Errorf("%s.%s: token is required (set it in the config file or via %s)", source, name, envVar)
 			}
 			// path_maps is optional: no entries means this instance's

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -207,7 +208,7 @@ targets:
 database:
   path: "/data/app.db"
 `
-	t.Setenv("BIFROEST_SOURCES_SONARR_MAIN_TOKEN", "from-env")
+	t.Setenv("BIFROEST_SONARR_MAIN_TOKEN", "from-env")
 	t.Setenv("BIFROEST_PLEX_TOKEN", "plex-from-env")
 
 	loaded, err := Load(writeConfig(t, cfg))
@@ -248,6 +249,7 @@ func TestEnvOverrideCoversScalarFieldsThroughoutTheTree(t *testing.T) {
 	t.Setenv("BIFROEST_JELLYFIN_TOKEN", "jf-secret")
 	t.Setenv("BIFROEST_DATABASE_PATH", "/tmp/other.db")
 	t.Setenv("BIFROEST_LOG_LEVEL", "debug")
+	t.Setenv("BIFROEST_LOG_FILE", "/var/log/bifroest.log")
 
 	loaded, err := Load(writeConfig(t, minimalConfig))
 	if err != nil {
@@ -277,6 +279,19 @@ func TestEnvOverrideCoversScalarFieldsThroughoutTheTree(t *testing.T) {
 	if loaded.Log.Level != "debug" {
 		t.Errorf("got log.level %q, want debug", loaded.Log.Level)
 	}
+	if loaded.Log.File != "/var/log/bifroest.log" {
+		t.Errorf("got log.file %q, want /var/log/bifroest.log", loaded.Log.File)
+	}
+}
+
+func TestLogFileDefaultsToEmptyMeaningStdoutOnly(t *testing.T) {
+	loaded, err := Load(writeConfig(t, minimalConfig))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if loaded.Log.File != "" {
+		t.Errorf("got log.file %q, want empty by default", loaded.Log.File)
+	}
 }
 
 func TestEnvOverrideInvalidValueFails(t *testing.T) {
@@ -292,7 +307,7 @@ func TestEnvOverrideCanInventNewSourceInstance(t *testing.T) {
 	// paths) rather than being silently dropped - this is what makes a
 	// config-file-less setup possible for instances that don't need a
 	// prefix rewrite.
-	t.Setenv("BIFROEST_SOURCES_SONARR_ANIME_TOKEN", "anime-secret")
+	t.Setenv("BIFROEST_SONARR_ANIME_TOKEN", "anime-secret")
 
 	loaded, err := Load(writeConfig(t, minimalConfig))
 	if err != nil {
@@ -317,7 +332,7 @@ func TestEnvOverrideCanInventNewSourceInstance(t *testing.T) {
 func TestEnvOverrideDoesNotClobberExistingInstance(t *testing.T) {
 	// Discovery must never overwrite an instance the file already defines
 	// (which could otherwise wipe out its path_maps).
-	t.Setenv("BIFROEST_SOURCES_SONARR_MAIN_TOKEN", "from-env")
+	t.Setenv("BIFROEST_SONARR_MAIN_TOKEN", "from-env")
 
 	loaded, err := Load(writeConfig(t, minimalConfig))
 	if err != nil {
@@ -334,7 +349,7 @@ func TestEnvOverrideDoesNotClobberExistingInstance(t *testing.T) {
 
 func TestLoadWithoutConfigFileFromEnvAlone(t *testing.T) {
 	t.Setenv("BIFROEST_MOUNT_ANCHOR", "/media/anchor.bin")
-	t.Setenv("BIFROEST_SOURCES_SONARR_MAIN_TOKEN", "sonarr-secret")
+	t.Setenv("BIFROEST_SONARR_MAIN_TOKEN", "sonarr-secret")
 	t.Setenv("BIFROEST_PLEX_ENABLED", "true")
 	t.Setenv("BIFROEST_PLEX_URL", "http://plex:32400")
 	t.Setenv("BIFROEST_PLEX_TOKEN", "plex-secret")
@@ -353,6 +368,33 @@ func TestLoadWithoutConfigFileFromEnvAlone(t *testing.T) {
 	// Defaults still apply for anything not set via env.
 	if loaded.Server.Port != 8080 {
 		t.Errorf("got port %d, want default 8080", loaded.Server.Port)
+	}
+}
+
+func TestMissingTokenErrorNamesTheShortEnvVar(t *testing.T) {
+	bad := `
+mount:
+  anchor: "/media/anchor.bin"
+sources:
+  sonarr:
+    main:
+      path_maps:
+        - from: "/tv/"
+          to: "/media/tv/"
+targets:
+  plex:
+    enabled: true
+    url: "http://plex:32400"
+    token: "x"
+database:
+  path: "/data/app.db"
+`
+	_, err := Load(writeConfig(t, bad))
+	if err == nil {
+		t.Fatal("expected an error for a missing sonarr token")
+	}
+	if !strings.Contains(err.Error(), "BIFROEST_SONARR_MAIN_TOKEN") {
+		t.Errorf("expected error to name BIFROEST_SONARR_MAIN_TOKEN (not the old BIFROEST_SOURCES_SONARR_MAIN_TOKEN), got: %v", err)
 	}
 }
 

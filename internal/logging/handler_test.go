@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -47,6 +48,18 @@ func TestColorsPresentByDefault(t *testing.T) {
 
 	if !strings.Contains(buf.String(), "\x1b[") {
 		t.Error("expected ANSI escape codes in output by default")
+	}
+}
+
+func TestNewPlainNeverColors(t *testing.T) {
+	// Unset NO_COLOR to prove NewPlain doesn't just happen to inherit it.
+	t.Setenv("NO_COLOR", "")
+	var buf bytes.Buffer
+	h := NewPlain(&buf, slog.LevelInfo)
+	slog.New(h).Info("hello", "error", "boom")
+
+	if strings.Contains(buf.String(), "\x1b[") {
+		t.Errorf("expected no ANSI escape codes from NewPlain, got: %q", buf.String())
 	}
 }
 
@@ -116,6 +129,65 @@ func TestWithAttrsAccumulates(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected %q in output, got: %q", want, out)
 		}
+	}
+}
+
+func TestMessageIsBold(t *testing.T) {
+	var buf bytes.Buffer
+	h := New(&buf, slog.LevelInfo)
+	slog.New(h).Info("starting bifroest")
+
+	if !strings.Contains(buf.String(), colorBold+"starting bifroest"+colorReset) {
+		t.Errorf("expected bold message, got: %q", buf.String())
+	}
+}
+
+func TestBooleanValuesColored(t *testing.T) {
+	var buf bytes.Buffer
+	h := New(&buf, slog.LevelInfo)
+	slog.New(h).Info("plex", "enabled", true)
+	slog.New(h).Info("jellyfin", "enabled", false)
+
+	out := buf.String()
+	if !strings.Contains(out, colorGreen+"true"+colorReset) {
+		t.Errorf("expected true highlighted green, got: %q", out)
+	}
+	if !strings.Contains(out, colorDim+"false"+colorReset) {
+		t.Errorf("expected false dimmed, got: %q", out)
+	}
+}
+
+func TestStatusCodeColored(t *testing.T) {
+	cases := []struct {
+		status int
+		want   string
+	}{
+		{200, colorGreen},
+		{202, colorGreen},
+		{301, colorCyan},
+		{404, colorYellow},
+		{500, colorRed},
+	}
+	for _, tc := range cases {
+		var buf bytes.Buffer
+		h := New(&buf, slog.LevelInfo)
+		slog.New(h).Info("http request", "status", tc.status)
+
+		want := tc.want + strconv.Itoa(tc.status) + colorReset
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("status %d: expected %q in output, got: %q", tc.status, want, buf.String())
+		}
+	}
+}
+
+func TestNonStatusKeyNumbersAreNotColored(t *testing.T) {
+	var buf bytes.Buffer
+	h := New(&buf, slog.LevelInfo)
+	slog.New(h).Info("scan completed", "job_id", 200)
+
+	out := buf.String()
+	if strings.Contains(out, colorGreen+"200"+colorReset) {
+		t.Errorf("expected job_id=200 not to be colored like a status code, got: %q", out)
 	}
 }
 

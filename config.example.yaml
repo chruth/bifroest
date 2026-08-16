@@ -9,8 +9,9 @@
 #   targets.plex.token              -> BIFROEST_PLEX_TOKEN
 #   targets.jellyfin.url            -> BIFROEST_JELLYFIN_URL
 #   targets.jellyfin.token          -> BIFROEST_JELLYFIN_TOKEN
-#   sources.sonarr.main.token       -> BIFROEST_SOURCES_SONARR_MAIN_TOKEN
-#   sources.radarr.main.token       -> BIFROEST_SOURCES_RADARR_MAIN_TOKEN
+#   sources.sonarr.main.token       -> BIFROEST_SONARR_MAIN_TOKEN
+#   sources.radarr.main.token       -> BIFROEST_RADARR_MAIN_TOKEN
+#   log.file                        -> BIFROEST_LOG_FILE
 #
 # URLs, tokens are deliberately left out of this file entirely rather than
 # written as e.g. `token: ""` - an empty string in the file and a field
@@ -146,3 +147,9 @@ database:
 log:
   # One of: debug, info, warn, error.
   # level: info
+  #
+  # Always logs to stdout (colored - see README.md). If also set, this
+  # additionally writes plain (uncolored) logs to a file, automatically
+  # rotated: 100MB per file, 3 old files kept compressed, 28 days max age.
+  # Empty/unset (the default) means stdout only.
+  # file: /data/bifroest.log

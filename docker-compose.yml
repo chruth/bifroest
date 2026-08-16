@@ -13,13 +13,13 @@ services:
       - BIFROEST_PLEX_TOKEN=${PLEX_TOKEN}
       - BIFROEST_JELLYFIN_URL=${JELLYFIN_URL}
       - BIFROEST_JELLYFIN_TOKEN=${JELLYFIN_TOKEN}
-      - BIFROEST_SOURCES_SONARR_MAIN_TOKEN=${SONARR_MAIN_TOKEN}
-      - BIFROEST_SOURCES_RADARR_MAIN_TOKEN=${RADARR_MAIN_TOKEN}
+      - BIFROEST_SONARR_MAIN_TOKEN=${SONARR_MAIN_TOKEN}
+      - BIFROEST_RADARR_MAIN_TOKEN=${RADARR_MAIN_TOKEN}
     volumes:
       # Optional: only needed for path_maps (a prefix rewrite between the
       # Sonarr/Radarr and Plex/Jellyfin filesystem views). If every
       # instance sees identical paths on both sides, drop this mount and
-      # BIFROEST_SOURCES_SONARR_MAIN_TOKEN above is enough to define it -
+      # BIFROEST_SONARR_MAIN_TOKEN above is enough to define it -
       # see README.md "Running without a config file".
       - ./config.yaml:/data/config.yaml:ro
       - ./data:/data
