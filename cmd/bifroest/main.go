@@ -136,27 +136,28 @@ func run() error {
 // logStartupSummary prints the effective (non-secret) configuration once,
 // right after it's loaded, so the first thing a look at the logs shows is
 // "here's what's actually in effect" rather than scattered per-target
-// startup noise. Tokens/API keys are never included.
+// startup noise. Split into a few short lines rather than one long one -
+// easier to scan at a glance. Tokens/API keys are never included.
 func logStartupSummary(log *slog.Logger, cfg *config.Config) {
-	attrs := []any{
-		"port", cfg.Server.Port,
-		"mount_anchor", cfg.Mount.Anchor,
-		"database_path", cfg.Database.Path,
-		"log_level", cfg.Log.Level,
-		"plex_enabled", cfg.Targets.Plex.Enabled,
-		"jellyfin_enabled", cfg.Targets.Jellyfin.Enabled,
-	}
+	log.Info("starting bifroest", "port", cfg.Server.Port, "log_level", cfg.Log.Level)
+	log.Info("mount", "anchor", cfg.Mount.Anchor)
+	log.Info("database", "path", cfg.Database.Path)
+
 	if cfg.Targets.Plex.Enabled {
-		attrs = append(attrs, "plex_url", cfg.Targets.Plex.URL)
+		log.Info("plex", "enabled", true, "url", cfg.Targets.Plex.URL)
+	} else {
+		log.Info("plex", "enabled", false)
 	}
 	if cfg.Targets.Jellyfin.Enabled {
-		attrs = append(attrs, "jellyfin_url", cfg.Targets.Jellyfin.URL)
+		log.Info("jellyfin", "enabled", true, "url", cfg.Targets.Jellyfin.URL)
+	} else {
+		log.Info("jellyfin", "enabled", false)
 	}
-	attrs = append(attrs,
-		"sonarr_instances", instanceList(cfg.Sources.Sonarr),
-		"radarr_instances", instanceList(cfg.Sources.Radarr),
+
+	log.Info("sources",
+		"sonarr", instanceList(cfg.Sources.Sonarr),
+		"radarr", instanceList(cfg.Sources.Radarr),
 	)
-	log.Info("starting bifroest", attrs...)
 }
 
 func instanceList(instances map[string]config.SourceInstance) string {
