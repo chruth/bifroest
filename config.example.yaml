@@ -11,7 +11,7 @@
 #   targets.jellyfin.token          -> BIFROEST_JELLYFIN_TOKEN
 #   sources.sonarr.main.token       -> BIFROEST_SONARR_MAIN_TOKEN
 #   sources.radarr.main.token       -> BIFROEST_RADARR_MAIN_TOKEN
-#   log.file                        -> BIFROEST_LOG_FILE
+#   log.path                        -> BIFROEST_LOG_PATH
 #
 # URLs, tokens are deliberately left out of this file entirely rather than
 # written as e.g. `token: ""` - an empty string in the file and a field
@@ -149,7 +149,9 @@ log:
   # level: info
   #
   # Always logs to stdout (colored - see README.md). If also set, this
-  # additionally writes plain (uncolored) logs to a file, automatically
-  # rotated: 100MB per file, 3 old files kept compressed, 28 days max age.
-  # Empty/unset (the default) means stdout only.
-  # file: /data/bifroest.log
+  # additionally writes plain (uncolored) logs to a file at this path -
+  # must be a file, not a directory, e.g. /data/bifroest.log rather than
+  # /data - automatically rotated: 100MB per file, 3 old files kept
+  # compressed, 28 days max age. Empty/unset (the default) means stdout
+  # only.
+  # path: /data/bifroest.log

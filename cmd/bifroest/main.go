@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -51,7 +52,10 @@ func run() error {
 
 	// 4. Initialize logging.
 	var closeLog func() error
-	log, closeLog = newLogger(cfg)
+	log, closeLog, err = newLogger(cfg)
+	if err != nil {
+		return fmt.Errorf("initialize logging: %w", err)
+	}
 	defer closeLog()
 	slog.SetDefault(log)
 	logStartupSummary(log, cfg)
@@ -138,7 +142,7 @@ func run() error {
 }
 
 // newLogger builds the application logger: always to stdout (colored), and
-// additionally to cfg.Log.File (rotated, plain - no ANSI codes in a file
+// additionally to cfg.Log.Path (rotated, plain - no ANSI codes in a file
 // meant to be read later by grep/tail/whatever) if one is configured. The
 // returned close func releases the log file on shutdown; it's a no-op
 // when no file is configured.
@@ -147,23 +151,49 @@ func run() error {
 // exposing yet more config knobs for a feature that just needs to not
 // grow the file forever: 100MB per file, 3 old files kept (compressed),
 // 28 days maximum age.
-func newLogger(cfg *config.Config) (*slog.Logger, func() error) {
+func newLogger(cfg *config.Config) (*slog.Logger, func() error, error) {
 	level := parseLevel(cfg.Log.Level)
 	console := logging.New(os.Stdout, level)
 
-	if cfg.Log.File == "" {
-		return slog.New(console), func() error { return nil }
+	if cfg.Log.Path == "" {
+		return slog.New(console), func() error { return nil }, nil
+	}
+
+	// slog.Logger's public methods (Info/Warn/...) never surface a
+	// Handler's write errors to the caller - a broken log destination
+	// isn't allowed to crash the app. That's the right call at runtime,
+	// but it means a bad path here (e.g. an existing directory, or a
+	// parent directory bifroest can't create/write to) would otherwise
+	// fail silently forever: every line to the file just vanishes with
+	// nothing printed anywhere to explain why. Catch that now, once, at
+	// startup, while we can still fail loudly.
+	if err := ensureWritableFile(cfg.Log.Path); err != nil {
+		return nil, nil, fmt.Errorf("log.path %q: %w", cfg.Log.Path, err)
 	}
 
 	rotator := &lumberjack.Logger{
-		Filename:   cfg.Log.File,
+		Filename:   cfg.Log.Path,
 		MaxSize:    100, // megabytes
 		MaxBackups: 3,
 		MaxAge:     28, // days
 		Compress:   true,
 	}
 	file := logging.NewPlain(rotator, level)
-	return slog.New(logging.NewFanOut(console, file)), rotator.Close
+	return slog.New(logging.NewFanOut(console, file)), rotator.Close, nil
+}
+
+// ensureWritableFile creates path's parent directory if needed and confirms
+// path itself can be opened for writing - notably rejecting the case where
+// path is an existing directory rather than a file.
+func ensureWritableFile(path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create directory: %w", err)
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	return f.Close()
 }
 
 // logStartupSummary prints the effective (non-secret) configuration once,
@@ -173,8 +203,8 @@ func newLogger(cfg *config.Config) (*slog.Logger, func() error) {
 // easier to scan at a glance. Tokens/API keys are never included.
 func logStartupSummary(log *slog.Logger, cfg *config.Config) {
 	logAttrs := []any{"port", cfg.Server.Port, "log_level", cfg.Log.Level}
-	if cfg.Log.File != "" {
-		logAttrs = append(logAttrs, "log_file", cfg.Log.File)
+	if cfg.Log.Path != "" {
+		logAttrs = append(logAttrs, "log_path", cfg.Log.Path)
 	}
 	log.Info("starting bifroest", logAttrs...)
 	log.Info("mount", "anchor", cfg.Mount.Anchor)

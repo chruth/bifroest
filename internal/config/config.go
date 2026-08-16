@@ -89,9 +89,11 @@ type DatabaseConfig struct {
 
 type LogConfig struct {
 	Level string `yaml:"level"`
-	// File, if set, additionally writes logs to this path (rotated - see
-	// cmd/bifroest). Empty (the default) means stdout only.
-	File string `yaml:"file"`
+	// Path, if set, additionally writes logs to this file (rotated - see
+	// cmd/bifroest). Must be a path to a file, not a directory - bifroest
+	// won't invent a filename inside one. Empty (the default) means
+	// stdout only.
+	Path string `yaml:"path"`
 }
 
 func defaults() Config {

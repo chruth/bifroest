@@ -249,7 +249,7 @@ func TestEnvOverrideCoversScalarFieldsThroughoutTheTree(t *testing.T) {
 	t.Setenv("BIFROEST_JELLYFIN_TOKEN", "jf-secret")
 	t.Setenv("BIFROEST_DATABASE_PATH", "/tmp/other.db")
 	t.Setenv("BIFROEST_LOG_LEVEL", "debug")
-	t.Setenv("BIFROEST_LOG_FILE", "/var/log/bifroest.log")
+	t.Setenv("BIFROEST_LOG_PATH", "/var/log/bifroest.log")
 
 	loaded, err := Load(writeConfig(t, minimalConfig))
 	if err != nil {
@@ -279,18 +279,18 @@ func TestEnvOverrideCoversScalarFieldsThroughoutTheTree(t *testing.T) {
 	if loaded.Log.Level != "debug" {
 		t.Errorf("got log.level %q, want debug", loaded.Log.Level)
 	}
-	if loaded.Log.File != "/var/log/bifroest.log" {
-		t.Errorf("got log.file %q, want /var/log/bifroest.log", loaded.Log.File)
+	if loaded.Log.Path != "/var/log/bifroest.log" {
+		t.Errorf("got log.path %q, want /var/log/bifroest.log", loaded.Log.Path)
 	}
 }
 
-func TestLogFileDefaultsToEmptyMeaningStdoutOnly(t *testing.T) {
+func TestLogPathDefaultsToEmptyMeaningStdoutOnly(t *testing.T) {
 	loaded, err := Load(writeConfig(t, minimalConfig))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if loaded.Log.File != "" {
-		t.Errorf("got log.file %q, want empty by default", loaded.Log.File)
+	if loaded.Log.Path != "" {
+		t.Errorf("got log.path %q, want empty by default", loaded.Log.Path)
 	}
 }
 
