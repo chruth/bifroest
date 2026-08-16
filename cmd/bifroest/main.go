@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/chruth/bifroest/internal/config"
+	"github.com/chruth/bifroest/internal/logging"
 	"github.com/chruth/bifroest/internal/mount"
 	"github.com/chruth/bifroest/internal/queue"
 	"github.com/chruth/bifroest/internal/server"
@@ -36,7 +37,7 @@ func run() error {
 
 	// A basic logger for startup, reconfigured once the config's log level
 	// is known.
-	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	log := slog.New(logging.New(os.Stdout, slog.LevelInfo))
 
 	// 1. Load configuration.
 	cfg, err := config.Load(*configPath)
@@ -45,7 +46,7 @@ func run() error {
 	}
 
 	// 4. Initialize logging.
-	log = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: parseLevel(cfg.Log.Level)}))
+	log = slog.New(logging.New(os.Stdout, parseLevel(cfg.Log.Level)))
 	slog.SetDefault(log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

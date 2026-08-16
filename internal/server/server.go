@@ -50,6 +50,15 @@ func withLogging(next http.Handler, log *slog.Logger) http.Handler {
 		start := time.Now()
 		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(sw, r)
+
+		// Health checks are typically polled every few seconds by Docker
+		// or an orchestrator and carry no useful information in the
+		// common (successful) case - logging them just drowns out
+		// everything else.
+		if r.URL.Path == "/health" || r.URL.Path == "/ready" {
+			return
+		}
+
 		log.Info("http request",
 			"method", r.Method,
 			"path", r.URL.Path,

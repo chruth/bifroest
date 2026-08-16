@@ -141,29 +141,20 @@ func TestWebhookAcceptedAndEnqueues(t *testing.T) {
 	}
 }
 
-func TestWebhookLogsIsUpgradeOnlyForDownloadEvents(t *testing.T) {
+func TestWebhookDoesNotLogIsUpgrade(t *testing.T) {
 	h, _, logBuf := newTestHandlerWithLog(t)
 
-	// Download: is_upgrade is meaningful (Sonarr/Radarr actually populate
-	// it) and must appear in the log.
+	// is_upgrade was noise: it's a plain bool Sonarr/Radarr only populate
+	// for Download events, so it sat at "false" for everything else,
+	// misleadingly implying bifroest had determined those weren't
+	// upgrades when the concept doesn't apply there at all. Not worth
+	// logging even for Download - dropped entirely.
 	rec := doWebhook(h, "POST", "/webhook/sonarr/main", "main-token", sonarrDownloadPayload)
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("got status %d, want 202: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(logBuf.String(), "is_upgrade") {
-		t.Error("expected is_upgrade to appear in the log for a Download event")
-	}
-
-	// Rename: is_upgrade isn't populated by Sonarr for this event type, so
-	// logging it as "false" would misleadingly imply bifroest determined
-	// this wasn't an upgrade, when the concept doesn't apply at all.
-	logBuf.Reset()
-	rec = doWebhook(h, "POST", "/webhook/sonarr/main", "main-token", sonarrRenamePayload)
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("got status %d, want 202: %s", rec.Code, rec.Body.String())
-	}
 	if strings.Contains(logBuf.String(), "is_upgrade") {
-		t.Errorf("expected no is_upgrade in the log for a Rename event, got: %s", logBuf.String())
+		t.Errorf("expected no is_upgrade in the log, got: %s", logBuf.String())
 	}
 }
 

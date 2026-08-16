@@ -63,6 +63,7 @@ webhook -> queue -> mount check -> path rewrite -> targeted scan.
 | `internal/target/plex` | Plex library discovery + targeted partial scan |
 | `internal/target/jellyfin` | Jellyfin library discovery + targeted media-updated refresh |
 | `internal/server` | HTTP server wiring, `/health`, `/ready` |
+| `internal/logging` | Colored, human-readable `slog.Handler` for console output |
 | `cmd/bifroest` | Startup wiring and graceful shutdown |
 
 The webhook handler never talks to Plex/Jellyfin directly — it only writes
@@ -106,6 +107,12 @@ Key sections:
   Sonarr/Radarr instance, each with its own `token` and its own
   `path_maps` (an ordered list of `from`/`to` prefix rewrites — see below).
 - `targets.plex` / `targets.jellyfin` — `enabled`, `url`, and credentials.
+- `log.level` — one of `debug`/`info`/`warn`/`error` (default `info`).
+  Logs are colored (dim timestamp; green/yellow/red/blue level; an
+  `error` value is always highlighted red, even on a `warn` line) —
+  set the `NO_COLOR` environment variable to any non-empty value to
+  turn that off, e.g. when piping logs somewhere that doesn't render
+  ANSI escape codes.
 
 ### Environment variables
 
