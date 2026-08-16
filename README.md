@@ -114,11 +114,11 @@ Key sections:
   `NO_COLOR` environment variable to any non-empty value to turn that
   off, e.g. when piping logs somewhere that doesn't render ANSI escape
   codes.
-- `log.path` — if set, additionally writes logs to this file, plain
-  (no color codes) and automatically rotated (100MB per file, 3 old
-  ones kept compressed, 28 days max age). Must be a path to a file,
-  not a directory — bifroest won't invent a filename inside one. Unset
-  (the default) means stdout only, same as before.
+- `log.dir` — if set, additionally writes logs to a `bifroest.log` file
+  inside this directory (created if it doesn't exist), plain (no color
+  codes) and automatically rotated (100MB per file, 3 old ones kept
+  compressed, 28 days max age). Unset (the default) means stdout only,
+  same as before.
 
 ### Environment variables
 
@@ -139,7 +139,7 @@ sources.sonarr.<instance>.token -> BIFROEST_SONARR_<INSTANCE>_TOKEN
 sources.radarr.<instance>.token -> BIFROEST_RADARR_<INSTANCE>_TOKEN
 database.path                   -> BIFROEST_DATABASE_PATH
 log.level                       -> BIFROEST_LOG_LEVEL
-log.path                        -> BIFROEST_LOG_PATH
+log.dir                         -> BIFROEST_LOG_DIR
 ```
 
 The instance name is upper-cased (`main` -> `MAIN`, `anime` -> `ANIME`).

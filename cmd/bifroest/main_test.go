@@ -25,35 +25,60 @@ func TestInstanceListSortedAndJoined(t *testing.T) {
 	}
 }
 
-func TestEnsureWritableFileRejectsExistingDirectory(t *testing.T) {
-	// Exactly the mistake that prompted this check: pointing log.file at
-	// a directory (e.g. a volume mount) instead of a file inside it.
-	dir := t.TempDir()
-	err := ensureWritableFile(dir)
-	if err == nil {
-		t.Fatal("expected an error when path is an existing directory")
-	}
-}
-
-func TestEnsureWritableFileCreatesParentDirs(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "nested", "dir", "bifroest.log")
-	if err := ensureWritableFile(path); err != nil {
+func TestEnsureWritableDirCreatesIt(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "nested", "logs")
+	if err := ensureWritableDir(dir); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if _, err := os.Stat(path); err != nil {
-		t.Errorf("expected file to exist at %s: %v", path, err)
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("expected directory to exist at %s: %v", dir, err)
+	}
+	if !info.IsDir() {
+		t.Errorf("expected %s to be a directory", dir)
 	}
 }
 
-func TestNewLoggerRejectsDirectoryLogFile(t *testing.T) {
-	dir := t.TempDir()
-	_, _, err := newLogger(&config.Config{Log: config.LogConfig{Level: "info", Path: dir}})
+func TestEnsureWritableDirRejectsExistingFile(t *testing.T) {
+	// The inverse of the original mistake: pointing log.dir at an actual
+	// file rather than a directory to create files inside.
+	file := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureWritableDir(file); err == nil {
+		t.Fatal("expected an error when log.dir is an existing file")
+	}
+}
+
+func TestNewLoggerRejectsFileAsLogDir(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := newLogger(&config.Config{Log: config.LogConfig{Level: "info", Dir: file}})
 	if err == nil {
-		t.Fatal("expected newLogger to fail when log.file is a directory")
+		t.Fatal("expected newLogger to fail when log.dir is a file")
 	}
 }
 
-func TestNewLoggerNoFileConfiguredSucceeds(t *testing.T) {
+func TestNewLoggerCreatesLogFileInsideDir(t *testing.T) {
+	dir := t.TempDir()
+	log, closeLog, err := newLogger(&config.Config{Log: config.LogConfig{Level: "info", Dir: dir}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer closeLog()
+
+	log.Info("hello")
+
+	path := filepath.Join(dir, logFileName)
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("expected log file to exist at %s: %v", path, err)
+	}
+}
+
+func TestNewLoggerNoDirConfiguredSucceeds(t *testing.T) {
 	log, closeLog, err := newLogger(&config.Config{Log: config.LogConfig{Level: "info"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

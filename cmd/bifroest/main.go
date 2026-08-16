@@ -141,11 +141,16 @@ func run() error {
 	return serveErr
 }
 
+// logFileName is the file bifroest creates inside cfg.Log.Dir. Fixed
+// rather than configurable - the directory is the only thing that
+// actually varies between deployments.
+const logFileName = "bifroest.log"
+
 // newLogger builds the application logger: always to stdout (colored), and
-// additionally to cfg.Log.Path (rotated, plain - no ANSI codes in a file
-// meant to be read later by grep/tail/whatever) if one is configured. The
-// returned close func releases the log file on shutdown; it's a no-op
-// when no file is configured.
+// additionally to a file inside cfg.Log.Dir (rotated, plain - no ANSI
+// codes in a file meant to be read later by grep/tail/whatever) if a
+// directory is configured. The returned close func releases the log file
+// on shutdown; it's a no-op when no directory is configured.
 //
 // Rotation uses lumberjack with fixed, sensible defaults rather than
 // exposing yet more config knobs for a feature that just needs to not
@@ -155,24 +160,24 @@ func newLogger(cfg *config.Config) (*slog.Logger, func() error, error) {
 	level := parseLevel(cfg.Log.Level)
 	console := logging.New(os.Stdout, level)
 
-	if cfg.Log.Path == "" {
+	if cfg.Log.Dir == "" {
 		return slog.New(console), func() error { return nil }, nil
 	}
 
 	// slog.Logger's public methods (Info/Warn/...) never surface a
 	// Handler's write errors to the caller - a broken log destination
 	// isn't allowed to crash the app. That's the right call at runtime,
-	// but it means a bad path here (e.g. an existing directory, or a
-	// parent directory bifroest can't create/write to) would otherwise
+	// but it means a bad directory here (doesn't exist and can't be
+	// created, isn't writable, or is actually a file) would otherwise
 	// fail silently forever: every line to the file just vanishes with
 	// nothing printed anywhere to explain why. Catch that now, once, at
 	// startup, while we can still fail loudly.
-	if err := ensureWritableFile(cfg.Log.Path); err != nil {
-		return nil, nil, fmt.Errorf("log.path %q: %w", cfg.Log.Path, err)
+	if err := ensureWritableDir(cfg.Log.Dir); err != nil {
+		return nil, nil, fmt.Errorf("log.dir %q: %w", cfg.Log.Dir, err)
 	}
 
 	rotator := &lumberjack.Logger{
-		Filename:   cfg.Log.Path,
+		Filename:   filepath.Join(cfg.Log.Dir, logFileName),
 		MaxSize:    100, // megabytes
 		MaxBackups: 3,
 		MaxAge:     28, // days
@@ -182,18 +187,22 @@ func newLogger(cfg *config.Config) (*slog.Logger, func() error, error) {
 	return slog.New(logging.NewFanOut(console, file)), rotator.Close, nil
 }
 
-// ensureWritableFile creates path's parent directory if needed and confirms
-// path itself can be opened for writing - notably rejecting the case where
-// path is an existing directory rather than a file.
-func ensureWritableFile(path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create directory: %w", err)
-	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
+// ensureWritableDir creates dir if needed and confirms bifroest can
+// actually write inside it - notably rejecting the case where dir already
+// exists as a regular file (MkdirAll alone would fail on that too, but
+// with a less obvious error) and catching a read-only mount, which
+// MkdirAll alone would not.
+func ensureWritableDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return f.Close()
+	probe := filepath.Join(dir, ".bifroest-write-check")
+	f, err := os.OpenFile(probe, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return fmt.Errorf("not writable: %w", err)
+	}
+	f.Close()
+	return os.Remove(probe)
 }
 
 // logStartupSummary prints the effective (non-secret) configuration once,
@@ -203,8 +212,8 @@ func ensureWritableFile(path string) error {
 // easier to scan at a glance. Tokens/API keys are never included.
 func logStartupSummary(log *slog.Logger, cfg *config.Config) {
 	logAttrs := []any{"port", cfg.Server.Port, "log_level", cfg.Log.Level}
-	if cfg.Log.Path != "" {
-		logAttrs = append(logAttrs, "log_path", cfg.Log.Path)
+	if cfg.Log.Dir != "" {
+		logAttrs = append(logAttrs, "log_dir", cfg.Log.Dir)
 	}
 	log.Info("starting bifroest", logAttrs...)
 	log.Info("mount", "anchor", cfg.Mount.Anchor)
